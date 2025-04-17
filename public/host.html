@@ -31,7 +31,7 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 
   <script>
-    const socket = io('http://localhost:3000');
+    const socket = io();
     const peers = {};
     let localStream;
     let shareURL = "";
@@ -54,6 +54,7 @@
 
       socket.emit('join-room', { room, name });
 
+      // Handle new users joining after class started
       socket.on('user-joined', ({ id, name }) => {
         const peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
 
@@ -66,6 +67,22 @@
         peers[id] = peer;
       });
 
+      // Handle users already in the room before instructor joins
+      socket.on('all-users', (userIds) => {
+        userIds.forEach(id => {
+          const peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
+
+          peer.on('signal', data => {
+            socket.emit('signal', { targetId: id, signal: data });
+          });
+
+          peer.on('error', err => console.error('Peer error:', err));
+
+          peers[id] = peer;
+        });
+      });
+
+      // Handle incoming signals from students
       socket.on('signal', ({ sourceId, signal }) => {
         if (peers[sourceId]) {
           peers[sourceId].signal(signal);
