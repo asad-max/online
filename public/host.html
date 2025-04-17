@@ -10,6 +10,7 @@
     #roomInfo { margin-top: 20px; font-size: 20px; color: #333; }
     #shareLink { margin-top: 10px; color: #0066cc; font-size: 16px; word-break: break-word; }
     #qr { margin-top: 20px; }
+    #studentList { margin-top: 30px; font-size: 18px; text-align: left; display: inline-block; }
   </style>
 </head>
 <body>
@@ -26,6 +27,12 @@
   <div id="qr"></div>
   <video id="localVideo" autoplay muted playsinline></video>
 
+  <!-- Joined students list -->
+  <div id="studentList">
+    <h3>👥 Joined Students:</h3>
+    <ul id="studentNames"></ul>
+  </div>
+
   <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
@@ -33,6 +40,7 @@
   <script>
     const socket = io();
     const peers = {};
+    const studentNames = {};
     let localStream;
     let shareURL = "";
 
@@ -54,8 +62,12 @@
 
       socket.emit('join-room', { room, name });
 
-      // Handle new users joining after class started
       socket.on('user-joined', ({ id, name }) => {
+        if (!studentNames[id]) {
+          studentNames[id] = name;
+          updateStudentList();
+        }
+
         const peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
 
         peer.on('signal', data => {
@@ -67,7 +79,6 @@
         peers[id] = peer;
       });
 
-      // Handle users already in the room before instructor joins
       socket.on('all-users', (userIds) => {
         userIds.forEach(id => {
           const peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
@@ -82,7 +93,6 @@
         });
       });
 
-      // Handle incoming signals from students
       socket.on('signal', ({ sourceId, signal }) => {
         if (peers[sourceId]) {
           peers[sourceId].signal(signal);
@@ -92,6 +102,18 @@
       socket.on('user-left', id => {
         if (peers[id]) peers[id].destroy();
         delete peers[id];
+        delete studentNames[id];
+        updateStudentList();
+      });
+    }
+
+    function updateStudentList() {
+      const list = document.getElementById('studentNames');
+      list.innerHTML = '';
+      Object.values(studentNames).forEach(name => {
+        const li = document.createElement('li');
+        li.textContent = name;
+        list.appendChild(li);
       });
     }
 

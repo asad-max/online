@@ -25,7 +25,7 @@
     const remoteVideo = document.getElementById('remoteVideo');
     let peer = null;
 
-    // Get room and name from URL
+    // Get room and name from URLS
     const urlParams = new URLSearchParams(window.location.search);
     const room = urlParams.get('room');
     const name = urlParams.get('name') || 'Anonymous';
