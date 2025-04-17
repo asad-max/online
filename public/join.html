@@ -4,109 +4,76 @@
   <meta charset="UTF-8">
   <title>Join Live Class</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #eef2f5;
-      text-align: center;
-      padding: 30px;
-    }
-    video {
-      width: 45%;
-      border-radius: 12px;
-      margin: 10px;
-      border: 2px solid #444;
-    }
+    body { font-family: sans-serif; background: #eef2f5; text-align: center; padding: 30px; }
+    video { width: 45%; border-radius: 12px; margin: 10px; border: 2px solid #444; }
   </style>
 </head>
 <body>
-  <h1> Joining Live Class...</h1>
+  <h1>🎓 Joining Live Class...</h1>
 
   <!-- Local student webcam feed -->
   <video id="localVideo" autoplay muted playsinline></video>
   <!-- Remote instructor webcam feed -->
   <video id="remoteVideo" autoplay playsinline></video>
 
-  <!-- Socket.IO for real-time signaling + SimplePeer for P2P WebRTC -->
+  <!-- Socket.IO for real-time signaling + SimplePeer for WebRTC -->
   <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
   <script>
-    // Step 1: Connect to the signaling server
-    const socket = io("http://localhost:3000");
-
-    // DOM references for videos
+    const socket = io(); // Automatically connects to current domain
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
-    const peers = {}; // track all peer connections (only one for now)
+    let peer = null;
 
-    // Step 2: Get room and name info from URL
+    // Get room and name from URL
     const urlParams = new URLSearchParams(window.location.search);
-    const room = urlParams.get('room'); // e.g., ?room=Math101
+    const room = urlParams.get('room');
     const name = urlParams.get('name') || 'Anonymous';
 
-    // Validate: if no room, show error and stop
     if (!room) {
-      alert("❌ Room name missing. Use ?room=ClassName in URL");
-      throw new Error("Room not specified");
+      alert("Room is missing from the URL");
+      throw new Error("Missing room parameter");
     }
 
-    let localStream;
+    // Start video and join class
+    async function joinClass() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = stream;
 
-    // Step 3: Function to start joining the class
-    async function join() {
-      // Request webcam and microphone
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localVideo.srcObject = localStream; // Show local feed
-
-      // Send join request to signaling server
       socket.emit('join-room', { room, name });
 
-      // Step 4: Handle another user joining (usually the host)
       socket.on('user-joined', ({ id }) => {
-        const peer = new SimplePeer({ initiator: false, trickle: false, stream: localStream });
-
-        // Send our SDP signal to the host
-        peer.on('signal', data => {
-          socket.emit('signal', { targetId: id, signal: data });
-        });
-
-        // When we get a remote stream (host), show it
-        peer.on('stream', stream => {
-          remoteVideo.srcObject = stream;
-        });
-
-        // Store this peer by socket ID
-        peers[id] = peer;
+        console.log('Instructor detected, ready to receive video');
       });
 
-      // Step 5: Receive signal (SDP answer/offer) from host
+      // Handle receiving signal from host
       socket.on('signal', ({ sourceId, signal }) => {
-        // If not already connected, create peer first
-        if (!peers[sourceId]) {
-          const peer = new SimplePeer({ initiator: false, trickle: false, stream: localStream });
+        if (!peer) {
+          peer = new SimplePeer({ initiator: false, trickle: false, stream });
 
           peer.on('signal', data => {
             socket.emit('signal', { targetId: sourceId, signal: data });
           });
 
-          peer.on('stream', stream => {
-            remoteVideo.srcObject = stream;
+          peer.on('stream', remoteStream => {
+            remoteVideo.srcObject = remoteStream;
           });
 
-          peers[sourceId] = peer;
+          peer.on('error', err => console.error('Peer error:', err));
         }
-        // Pass the signal to the peer connection
-        peers[sourceId].signal(signal);
+
+        peer.signal(signal);
       });
 
-      // Step 6: Clean up when host leaves
+      // Clean up if host disconnects
       socket.on('user-left', id => {
-        if (peers[id]) peers[id].destroy();
-        delete peers[id];
+        if (peer) peer.destroy();
+        peer = null;
+        remoteVideo.srcObject = null;
       });
     }
 
-    // Call join function to start everything
-    join();
+    joinClass();
   </script>
 </body>
 </html>
