@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Host a Live Class</title>
+  <style>
+    body { font-family: sans-serif; background: #f9f9f9; padding: 40px; text-align: center; }
+    input, button { padding: 12px; font-size: 16px; margin: 10px; width: 300px; }
+    video { width: 45%; border-radius: 12px; margin: 10px; border: 2px solid #333; }
+    #roomInfo { margin-top: 20px; font-size: 20px; color: #333; }
+    #shareLink { margin-top: 10px; color: #0066cc; font-size: 16px; word-break: break-word; }
+    #qr { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>🎥 Host a Live Class</h1>
+
+  <input type="text" id="hostName" placeholder="Enter your name (Instructor)">
+  <input type="text" id="roomName" placeholder="Enter room name (e.g. Math101)">
+  <br>
+  <button onclick="startClass()">Start Class</button>
+
+  <div id="roomInfo"></div>
+  <div id="shareLink"></div>
+  <button onclick="copyLink()">📋 Copy Link</button>
+  <div id="qr"></div>
+  <video id="localVideo" autoplay muted playsinline></video>
+
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <script>
+    const socket = io('http://localhost:3000');
+    const peers = {};
+    let localStream;
+    let shareURL = "";
+
+    async function startClass() {
+      const room = document.getElementById('roomName').value;
+      const name = document.getElementById('hostName').value;
+      if (!room || !name) return alert('Please enter both your name and a room name');
+
+      document.getElementById('roomInfo').innerText = `Room: ${room} (Now Live)`;
+      shareURL = `${window.location.origin}/join.html?room=${encodeURIComponent(room)}&name=Student`;
+      document.getElementById('shareLink').innerHTML = `🔗 Share this link with students:<br><strong>${shareURL}</strong>`;
+
+      QRCode.toCanvas(document.getElementById("qr"), shareURL, { width: 200 }, function (error) {
+        if (error) console.error(error);
+      });
+
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById('localVideo').srcObject = localStream;
+
+      socket.emit('join-room', { room, name });
+
+      socket.on('user-joined', ({ id, name }) => {
+        const peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
+
+        peer.on('signal', data => {
+          socket.emit('signal', { targetId: id, signal: data });
+        });
+
+        peer.on('error', err => console.error('Peer error:', err));
+
+        peers[id] = peer;
+      });
+
+      socket.on('signal', ({ sourceId, signal }) => {
+        if (peers[sourceId]) {
+          peers[sourceId].signal(signal);
+        }
+      });
+
+      socket.on('user-left', id => {
+        if (peers[id]) peers[id].destroy();
+        delete peers[id];
+      });
+    }
+
+    function copyLink() {
+      navigator.clipboard.writeText(shareURL).then(() => {
+        alert('✅ Join link copied to clipboard!');
+      });
+    }
+  </script>
+</body>
+</html>
